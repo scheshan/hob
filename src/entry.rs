@@ -25,9 +25,9 @@ impl FieldData {
 }
 
 pub struct Entry {
-    time: u64,
-    id: u64,
-    fields: HashMap<String, FieldData>,
+    pub(crate) time: u64,
+    pub(crate) id: u64,
+    pub(crate) fields: HashMap<String, FieldData>,
 }
 
 impl TryFrom<Value> for Entry {
@@ -52,6 +52,10 @@ impl TryFrom<Value> for Entry {
     }
 }
 
+pub struct EntryBatch {
+    pub(crate) entries: Vec<Entry>
+}
+
 fn parse_time(value: &Value) -> u64 {
     //todo: support various time format
     if let Some(v) = value.get("__time__") {
@@ -74,8 +78,12 @@ fn populate_fields(
     name: &str,
     value: &Value,
 ) {
-    if value.is_array() {
-        //DO NOT support array
+    if value.is_array() || value.is_null() {
+        //DO NOT support array or null
+        return;
+    }
+    if name.starts_with("__") && name.ends_with("__") {
+        //skip reserved keys, such as __time__ and others
         return;
     }
 
