@@ -109,3 +109,49 @@ fn populate_fields(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use arrow_schema::DataType;
+    use serde_json::Value;
+    use crate::entry::{Entry, FieldData};
+
+    #[test]
+    fn test_from_json() {
+        let json = "{\
+  \"string\": \"这是一个字符串\",\
+  \"u64\": 18446744073709551615,\
+  \"i64\": -123,\
+  \"f64\": -1.23,\
+  \"boolean\": true,\
+  \"null\": null,\
+  \"array\": [1, 2, 3],\
+  \"object\": {\
+    \"key1\": \"value1\"\
+  }\
+}";
+        let value = serde_json::from_str::<Value>(json).unwrap();
+        let entry = Entry::try_from(value).unwrap();
+
+        let FieldData::String(s) = &entry.fields["string"] else {
+            panic!("parse failed")
+        };
+        let FieldData::U64(s) = &entry.fields["u64"] else {
+            panic!("parse failed")
+        };
+        let FieldData::I64(s) = &entry.fields["i64"] else {
+            panic!("parse failed")
+        };
+        let FieldData::F64(s) = &entry.fields["f64"] else {
+            panic!("parse failed")
+        };
+        let FieldData::Bool(s) = &entry.fields["boolean"] else {
+            panic!("parse failed")
+        };
+        assert!(!entry.fields.contains_key("null"));
+        assert!(!entry.fields.contains_key("array"));
+        let FieldData::String(s) = &entry.fields["object.key1"] else {
+            panic!("parse failed")
+        };
+    }
+}

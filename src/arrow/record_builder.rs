@@ -1,19 +1,19 @@
-use crate::entry::{Entry, FieldData};
-use arrow_array::builder::{
-    BinaryBuilder, BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder,
-};
-use arrow_array::{Array, ArrayRef, RecordBatch};
-use arrow_schema::{DataType, FieldRef, SchemaRef};
 use std::str::FromStr;
 use std::sync::Arc;
+use arrow_array::{ArrayRef, RecordBatch, RecordBatchOptions};
+use arrow_array::builder::{BinaryBuilder, BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder};
+use arrow_schema::{DataType, FieldRef};
+use crate::arrow::ArrowSchema;
+use crate::arrow::record::ArrowRecordBatch;
+use crate::entry::{Entry, FieldData};
 
 pub struct RecordBatchBuilder {
-    schema: SchemaRef,
+    schema: ArrowSchema,
     array_builders: Vec<ArrayBuilder>,
 }
 
 impl RecordBatchBuilder {
-    pub fn new(schema: SchemaRef) -> Self {
+    pub fn new(schema: ArrowSchema) -> Self {
         let mut array_builders = Vec::new();
         for field in &schema.fields {
             let array_builder = ArrayBuilder::new(field);
@@ -69,13 +69,16 @@ impl RecordBatchBuilder {
         true
     }
 
-    pub fn build(self) -> RecordBatch {
+    pub fn build(self) -> ArrowRecordBatch {
         let mut arrays = Vec::with_capacity(self.array_builders.len());
         for builder in self.array_builders {
             arrays.push(builder.build());
         }
 
-        RecordBatch::try_new(self.schema, arrays).unwrap()
+        let opt = RecordBatchOptions::new();
+
+        let record = RecordBatch::try_new(self.schema.schema(), arrays).unwrap();
+        ArrowRecordBatch::new(self.schema, record)
     }
 }
 

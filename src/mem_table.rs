@@ -1,12 +1,10 @@
+use crate::arrow::{ArrowRecordBatch, ArrowSchema, RecordBatchBuilder};
 use crate::entry::EntryBatch;
-use crate::record::RecordBatchBuilder;
-use arrow_array::RecordBatch;
-use arrow_schema::SchemaRef;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct MemTable {
-    data: Vec<Arc<RecordBatch>>,
+    data: Vec<Arc<ArrowRecordBatch>>,
     approximate_size: usize,
 }
 
@@ -18,14 +16,14 @@ impl MemTable {
         }
     }
 
-    pub fn add(&mut self, schema: SchemaRef, batch: EntryBatch) {
-        let mut record_builder = RecordBatchBuilder::new(schema);
+    pub fn add(&mut self, arrow_schema: ArrowSchema, batch: EntryBatch) {
+        let mut record_builder = RecordBatchBuilder::new(arrow_schema);
         for entry in batch.entries {
             record_builder.add_record(entry);
         }
 
         let rb = record_builder.build();
-        self.approximate_size += rb.get_array_memory_size();
+        self.approximate_size += rb.memory_size();
         self.data.push(Arc::new(rb));
     }
 
