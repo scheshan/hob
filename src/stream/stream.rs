@@ -8,23 +8,26 @@ use crate::stream::ss_table::SSTable;
 use std::mem;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use crate::arg::Args;
 
 #[derive(Clone)]
 pub struct Stream {
     name: Arc<String>,
-    schema_store: Arc<SchemaStore>,
-    id_generator: Arc<IdGenerator>,
+    args: Args,
+    schema_store: SchemaStore,
+    id_generator: IdGenerator,
     inner: Arc<RwLock<StreamInner>>,
     mem_table_id: Arc<AtomicU64>,
     ss_table_id: Arc<AtomicU64>,
 }
 
 impl Stream {
-    pub fn new(name: String, schema_store: SchemaStore, id_generator: IdGenerator) -> Self {
+    pub fn new(name: String, args: Args, schema_store: SchemaStore, id_generator: IdGenerator) -> Self {
         Self {
             name: Arc::new(name),
-            schema_store: Arc::new(schema_store),
-            id_generator: Arc::new(id_generator),
+            args,
+            schema_store,
+            id_generator,
             inner: Arc::new(RwLock::new(StreamInner {
                 mem_table: MemTable::new(0),
                 mem_table_list: Vec::new(),
@@ -50,7 +53,7 @@ impl Stream {
         let mut inner = self.inner.write().unwrap();
         inner.mem_table.add(arrow_schema, batch);
 
-        if inner.mem_table.approximate_size() > 100 * 1024 {
+        if inner.mem_table.approximate_size() > self.args.mem_table_size {
             log::info!("Generate new mem_table for stream: {}", self.name);
             let new_mem_table = MemTable::new(self.next_mem_table_id());
             let old_mem_table = mem::replace(&mut inner.mem_table, new_mem_table);

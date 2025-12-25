@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use crate::stream::ss_table::SSTable;
 
 pub async fn flush_mem_table_job(server: Server, ct: CancellationToken) {
-    let period = Duration::from_secs(10);
+    let period = Duration::from_secs(server.args_ref().mem_table_flush_seconds);
     let mut interval = interval_at(Instant::now() + period, period);
 
     loop {
