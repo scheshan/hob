@@ -1,8 +1,7 @@
 mod id;
 mod entry;
-mod store;
-mod mem_table;
 mod schema;
 mod arrow;
+mod stream;
 
 pub type Result<T> = anyhow::Result<T>;

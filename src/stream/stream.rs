@@ -1,21 +1,21 @@
 use crate::arrow::ArrowSchema;
 use crate::entry::EntryBatch;
 use crate::id::IdGenerator;
-use crate::mem_table::MemTable;
 use crate::schema::{infer_schema, need_evolve_schema, SchemaStore};
 use crate::Result;
 use std::mem;
 use std::sync::{Arc, RwLock};
+use crate::stream::MemTable;
 
 #[derive(Clone)]
-pub struct Store {
+pub struct Stream {
     name: String,
     schema_store: Arc<SchemaStore>,
     id_generator: Arc<IdGenerator>,
-    inner: Arc<RwLock<StoreInner>>
+    inner: Arc<RwLock<StreamInner>>
 }
 
-impl Store {
+impl Stream {
     pub fn add(&self, mut batch: EntryBatch) -> Result<()> {
         if batch.entries.is_empty() {
             return Ok(())
@@ -71,7 +71,7 @@ impl Store {
     }
 }
 
-struct StoreInner {
+struct StreamInner {
     mem_table: MemTable,
     mem_table_list: Vec<Arc<MemTable>>
 }
