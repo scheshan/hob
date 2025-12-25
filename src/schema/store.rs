@@ -2,6 +2,9 @@ use crate::arrow::ArrowSchema;
 use crate::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use tokio::time::{interval_at, Instant};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct SchemaStore {
@@ -38,46 +41,22 @@ impl SchemaStore {
         true
     }
 
-    // pub fn load_schema(&self) -> Result<()> {
-    //     let schema_ref = Arc::new(Schema::new(vec![
-    //         Field::new("__id__", DataType::UInt64, false),
-    //         Field::new("__time__", DataType::UInt64, false),
-    //         Field::new("message", DataType::Utf8, true),
-    //         Field::new("log_level", DataType::Utf8, true),
-    //         Field::new("app_name", DataType::Utf8, true),
-    //     ]));
-    //     let mut lock = self.lock.write().unwrap();
-    //     let mut hm = HashMap::new();
-    //     hm.insert("test1".to_string(), schema_ref.clone());
-    //     hm.insert("test2".to_string(), schema_ref.clone());
-    //     hm.insert("test3".to_string(), schema_ref.clone());
-    //     *lock = hm;
-    //     Ok(())
-    // }
-    //
-    // pub async fn run(self, ct: CancellationToken) {
-    //     let period = Duration::from_secs(30);
-    //     let mut interval = interval_at(Instant::now().add(period), period);
-    //
-    //     loop {
-    //         tokio::select! {
-    //             _ = ct.cancelled() => {
-    //                 log::info!("receive shutdown signal, exit SchemaResolver loop");
-    //             }
-    //             _ = interval.tick() => {
-    //                 log::info!("start to load schema");
-    //                 match self.load_schema() {
-    //                     Ok(_) => {
-    //                         log::info!("successfully load schema");
-    //                     },
-    //                     Err(e) => {
-    //                         log::error!("load schema failed: {}, will retry", e);
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    pub async fn run(self, ct: CancellationToken) {
+        let period = Duration::from_secs(30);
+        let mut interval = interval_at(Instant::now() + period, period);
+
+        loop {
+            tokio::select! {
+                _ = ct.cancelled() => {
+                    log::info!("Exit SchemaAutoLoadJob");
+                    break;
+                }
+                _ = interval.tick() => {
+                    log::info!("start to load schema");
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

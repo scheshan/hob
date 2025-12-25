@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time;
 use std::time::SystemTime;
@@ -5,14 +6,15 @@ use std::time::SystemTime;
 const SHIFT: u64 = 20;
 const MASK: u64 = (1 << SHIFT) - 1;
 
+#[derive(Clone)]
 pub struct IdGenerator {
-    id: AtomicU64,
+    id: Arc<AtomicU64>,
 }
 
 impl IdGenerator {
     pub fn new() -> Self {
         Self {
-            id: AtomicU64::new(0),
+            id: Arc::new(AtomicU64::new(0)),
         }
     }
 
