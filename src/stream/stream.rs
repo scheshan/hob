@@ -1,24 +1,43 @@
+use crate::Result;
 use crate::arrow::ArrowSchema;
 use crate::entry::EntryBatch;
 use crate::id::IdGenerator;
-use crate::schema::{infer_schema, need_evolve_schema, SchemaStore};
-use crate::Result;
-use std::mem;
-use std::sync::{Arc, RwLock};
+use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::stream::MemTable;
+use crate::stream::ss_table::SSTable;
+use std::mem;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
 pub struct Stream {
-    name: String,
+    name: Arc<String>,
     schema_store: Arc<SchemaStore>,
     id_generator: Arc<IdGenerator>,
-    inner: Arc<RwLock<StreamInner>>
+    inner: Arc<RwLock<StreamInner>>,
+    mem_table_id: Arc<AtomicU64>,
+    ss_table_id: Arc<AtomicU64>,
 }
 
 impl Stream {
+    pub fn new(name: String, schema_store: SchemaStore, id_generator: IdGenerator) -> Self {
+        Self {
+            name: Arc::new(name),
+            schema_store: Arc::new(schema_store),
+            id_generator: Arc::new(id_generator),
+            inner: Arc::new(RwLock::new(StreamInner {
+                mem_table: MemTable::new(0),
+                mem_table_list: Vec::new(),
+                ss_table_list: Vec::new(),
+            })),
+            mem_table_id: Arc::new(AtomicU64::new(1)),
+            ss_table_id: Arc::new(AtomicU64::new(1)),
+        }
+    }
+
     pub fn add(&self, mut batch: EntryBatch) -> Result<()> {
         if batch.entries.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         let mut id_range = self.id_generator.generate_n(batch.entries.len());
@@ -31,13 +50,46 @@ impl Stream {
         let mut inner = self.inner.write().unwrap();
         inner.mem_table.add(arrow_schema, batch);
 
-        if inner.mem_table.approximate_size() > 8 * 1024 * 1024 {
-            let new_mem_table = MemTable::new();
+        if inner.mem_table.approximate_size() > 100 * 1024 {
+            log::info!("Generate new mem_table for stream: {}", self.name);
+            let new_mem_table = MemTable::new(self.next_mem_table_id());
             let old_mem_table = mem::replace(&mut inner.mem_table, new_mem_table);
             inner.mem_table_list.push(Arc::new(old_mem_table));
         }
 
         Ok(())
+    }
+
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn clone_mem_table_list(&self) -> Vec<Arc<MemTable>> {
+        let guard = self.inner.read().unwrap();
+        guard.mem_table_list.clone()
+    }
+
+    pub fn next_mem_table_id(&self) -> u64 {
+        self.mem_table_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn next_ss_table_id(&self) -> u64 {
+        self.ss_table_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn flush_completed(&self, ss_table_list: Vec<SSTable>, max_mem_table_id: u64) {
+        let mut guard = self.inner.write().unwrap();
+        let mem_table_list = guard
+            .mem_table_list
+            .iter()
+            .filter(|m| m.id() > max_mem_table_id)
+            .map(|m| m.clone())
+            .collect();
+        guard.mem_table_list = mem_table_list;
+
+        for ss_table in ss_table_list {
+            guard.ss_table_list.push(Arc::new(ss_table));
+        }
     }
 
     fn generate_schema(&self, batch: &EntryBatch) -> Result<ArrowSchema> {
@@ -48,7 +100,7 @@ impl Stream {
                     //if schema not exists, try to store the inferred schema to store
                     let arrow_schema = ArrowSchema::new(infer_schema.clone(), 1);
                     if self.schema_store.set(&self.name, 0, arrow_schema.clone()) {
-                        return Ok(arrow_schema)
+                        return Ok(arrow_schema);
                     }
                 }
                 Some(exist_schema) => {
@@ -56,11 +108,16 @@ impl Stream {
                         None => {
                             //if no need to evolve, return the exist schema
                             return Ok(exist_schema);
-                        },
+                        }
                         Some(new_schema) => {
                             //try to store the combined schema
-                            let arrow_schema = ArrowSchema::new(new_schema, exist_schema.version() + 1);
-                            if self.schema_store.set(&self.name, exist_schema.version(), arrow_schema.clone()) {
+                            let arrow_schema =
+                                ArrowSchema::new(new_schema, exist_schema.version() + 1);
+                            if self.schema_store.set(
+                                &self.name,
+                                exist_schema.version(),
+                                arrow_schema.clone(),
+                            ) {
                                 return Ok(arrow_schema);
                             }
                         }
@@ -71,7 +128,9 @@ impl Stream {
     }
 }
 
+#[derive(Clone)]
 struct StreamInner {
     mem_table: MemTable,
-    mem_table_list: Vec<Arc<MemTable>>
+    mem_table_list: Vec<Arc<MemTable>>,
+    ss_table_list: Vec<Arc<SSTable>>,
 }

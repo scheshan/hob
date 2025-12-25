@@ -1,6 +1,7 @@
 mod stream;
 mod mem_table;
 mod job;
+mod ss_table;
 
 pub use mem_table::MemTable;
 pub use stream::Stream;

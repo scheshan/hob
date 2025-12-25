@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct MemTable {
+    id: u64,
     data: Vec<Arc<ArrowRecordBatch>>,
     approximate_size: usize,
 }
 
 impl MemTable {
-    pub fn new() -> Self {
+    pub fn new(id: u64) -> Self {
         Self {
+            id,
             data: Vec::new(),
             approximate_size: 0,
         }
@@ -29,5 +31,13 @@ impl MemTable {
 
     pub fn approximate_size(&self) -> usize {
         self.approximate_size
+    }
+    
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn data(&self) -> &Vec<Arc<ArrowRecordBatch>> {
+        &self.data
     }
 }
