@@ -5,7 +5,7 @@ use crate::id::IdGenerator;
 use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::stream::MemTable;
 use crate::stream::ss_table::SSTable;
-use std::mem;
+use std::{cmp, mem};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use crate::arg::Args;
@@ -43,10 +43,7 @@ impl Stream {
             return Ok(());
         }
 
-        let mut id_range = self.id_generator.generate_n(batch.entries.len());
-        for entry in &mut batch.entries {
-            entry.id = id_range.next().unwrap()
-        }
+        self.populate_id(&mut batch);
 
         let arrow_schema = self.generate_schema(&batch)?;
 
@@ -92,6 +89,13 @@ impl Stream {
 
         for ss_table in ss_table_list {
             guard.ss_table_list.push(Arc::new(ss_table));
+        }
+    }
+
+    fn populate_id(&self, batch: &mut EntryBatch) {
+        let mut id_range = self.id_generator.generate_n(batch.entries.len());
+        for entry in &mut batch.entries {
+            entry.id = id_range.next().unwrap()
         }
     }
 

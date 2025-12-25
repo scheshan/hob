@@ -34,4 +34,8 @@ impl ArrowRecordBatch {
     pub fn schema_version(&self) -> u64 {
         self.schema.version()
     }
+
+    pub fn num_rows(&self) -> usize {
+        self.record.num_rows()
+    }
 }

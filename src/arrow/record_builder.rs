@@ -1,11 +1,14 @@
+use crate::arrow::record::ArrowRecordBatch;
+use crate::arrow::ArrowSchema;
+use crate::entry::{Entry, EntryBatch, FieldData};
+use arrow_array::builder::{
+    BinaryBuilder, BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder,
+};
+use arrow_array::{ArrayRef, RecordBatch, RecordBatchOptions};
+use arrow_schema::{DataType, FieldRef};
+use std::cmp;
 use std::str::FromStr;
 use std::sync::Arc;
-use arrow_array::{ArrayRef, RecordBatch, RecordBatchOptions};
-use arrow_array::builder::{BinaryBuilder, BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder};
-use arrow_schema::{DataType, FieldRef};
-use crate::arrow::ArrowSchema;
-use crate::arrow::record::ArrowRecordBatch;
-use crate::entry::{Entry, FieldData};
 
 pub struct RecordBatchBuilder {
     schema: ArrowSchema,
@@ -26,26 +29,42 @@ impl RecordBatchBuilder {
         }
     }
 
-    pub fn add_record(&mut self, entry: Entry) -> bool {
-        if !self.record_is_valid(&entry) {
-            false
-        } else {
-            for i in 0..self.schema.fields.len() {
-                let field = self.schema.field(i);
-                let array_builder = self.array_builders.get_mut(i).unwrap();
+    pub fn build_with_entry_batch(mut self, mut batch: EntryBatch) -> ArrowRecordBatch {
+        batch.entries.sort_by(|l, r| {
+            if l.time > r.time {
+                cmp::Ordering::Less
+            } else if l.time < r.time {
+                cmp::Ordering::Greater
+            } else {
+                r.id.cmp(&l.id)
+            }
+        });
 
-                if field.name() == "__id__" {
-                    array_builder.add_record_value(Some(&FieldData::U64(entry.id)));
-                } else if field.name() == "__time__" {
-                    array_builder.add_record_value(Some(&FieldData::U64(entry.time)));
-                } else {
-                    let data = entry.fields.get(field.name());
-                    array_builder.add_record_value(data);
+        for entry in batch.entries {
+            if !self.record_is_valid(&entry) {
+                continue;
+            } else {
+                for i in 0..self.schema.fields.len() {
+                    let field = self.schema.field(i);
+                    let array_builder = self.array_builders.get_mut(i).unwrap();
+
+                    if field.name() == "__id__" {
+                        array_builder.add_record_value(Some(&FieldData::U64(entry.id)));
+                    } else if field.name() == "__time__" {
+                        array_builder.add_record_value(Some(&FieldData::U64(entry.time)));
+                    } else {
+                        let data = entry.fields.get(field.name());
+                        array_builder.add_record_value(data);
+                    }
                 }
             }
-
-            true
         }
+
+        self.build()
+    }
+
+    pub fn build_with_record_batch(mut self, batches: Vec<ArrowRecordBatch>) -> ArrowRecordBatch {
+        todo!()
     }
 
     fn record_is_valid(&self, entry: &Entry) -> bool {
@@ -69,7 +88,7 @@ impl RecordBatchBuilder {
         true
     }
 
-    pub fn build(self) -> ArrowRecordBatch {
+    fn build(self) -> ArrowRecordBatch {
         let mut arrays = Vec::with_capacity(self.array_builders.len());
         for builder in self.array_builders {
             arrays.push(builder.build());
