@@ -1,64 +1,15 @@
-use crate::Result;
-use crate::arg::Args;
-use crate::entry::{Entry, EntryBatch};
-use crate::id::IdGenerator;
-use crate::schema::{SchemaStore, refresh_schema_job};
-use crate::stream::{Stream, flush_mem_table_job};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::signal::ctrl_c;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-
-#[derive(Clone)]
-pub struct Server {
-    args: Args,
-    id_generator: IdGenerator,
-    schema_store: SchemaStore,
-    streams: Arc<RwLock<HashMap<String, Stream>>>,
-}
-
-impl Server {
-    pub fn new(id_generator: IdGenerator, schema_store: SchemaStore, args: Args) -> Self {
-        Self {
-            id_generator,
-            schema_store,
-            streams: Arc::new(RwLock::new(HashMap::new())),
-            args,
-        }
-    }
-
-    pub fn get_stream(&self, name: String) -> Stream {
-        let guard = self.streams.read().unwrap();
-        let stream = guard.get(&name).map(|s| s.clone());
-        drop(guard);
-        if stream.is_some() {
-            return stream.unwrap();
-        }
-
-        let mut guard = self.streams.write().unwrap();
-        let stream = guard.entry(name.clone()).or_insert_with(|| {
-            Stream::new(
-                name,
-                self.args.clone(),
-                self.schema_store.clone(),
-                self.id_generator.clone(),
-            )
-        });
-        stream.clone()
-    }
-
-    pub fn all_streams(&self) -> Vec<Stream> {
-        let guard = self.streams.read().unwrap();
-        guard.iter().map(|e| e.1.clone()).collect()
-    }
-
-    pub fn args_ref(&self) -> &Args {
-        &self.args
-    }
-}
+use crate::arg::Args;
+use crate::entry::{Entry, EntryBatch};
+use crate::id::IdGenerator;
+use crate::Result;
+use crate::schema::{refresh_schema_job, SchemaStore};
+use crate::server::server::Server;
+use crate::stream::flush_mem_table_job;
 
 pub async fn run() {
     let args = Args::default();
@@ -125,9 +76,8 @@ fn add_test_data(tracker: &TaskTracker, server: Server, ct: CancellationToken) {
                 }
                 _ = interval.tick() =>{
                     log::info!("Add testing data");
-                    let stream = server.get_stream("test1".to_string());
                     let batch = generate_test_data();
-                    stream.add(batch).unwrap();
+                    server.ingest(&"test1".to_string(), batch).unwrap();
                 }
             }
         }
