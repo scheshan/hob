@@ -1,6 +1,6 @@
 use std::cmp::max;
 use crate::Result;
-use crate::arrow::{ArrowRecordBatch, ArrowSchema};
+use crate::arrow::{ArrowRecordBatch, ArrowRecordBatchStream, ArrowSchema};
 use crate::server::Server;
 use crate::stream::Stream;
 use std::collections::HashMap;
@@ -70,7 +70,16 @@ async fn flush_stream_mem_table(stream: &Stream) -> Result<()> {
         let ss_table_id = stream.next_ss_table_id();
         let schema = version_schema_map.get(&version).unwrap();
         let records = version_record_map.get(&version).unwrap();
-        let ss_table = generate_ss_table(ss_table_id, schema, records).await?;
+        let mut stream = ArrowRecordBatchStream::new(schema.clone());
+        for record in records {
+            match stream.add_record_batch(record.clone()) {
+                Err(e) => {
+                    log::error!("Add record_batch failed when flushing mem_table: {}", e);
+                },
+                Ok(_) => {}
+            }
+        }
+        let ss_table = generate_ss_table(ss_table_id, schema, stream).await?;
         ss_tables.push(ss_table);
     }
 
@@ -79,7 +88,7 @@ async fn flush_stream_mem_table(stream: &Stream) -> Result<()> {
     Ok(())
 }
 
-async fn generate_ss_table(id: u64, arrow_schema: &ArrowSchema, records: &Vec<Arc<ArrowRecordBatch>>) -> Result<SSTable> {
+async fn generate_ss_table(id: u64, arrow_schema: &ArrowSchema, mut stream: ArrowRecordBatchStream) -> Result<SSTable> {
     let root_dir : PathBuf = "D:\\data\\hob".into();
     let path = root_dir.join("data").join(format!("{}.bin", id));
 
@@ -88,8 +97,13 @@ async fn generate_ss_table(id: u64, arrow_schema: &ArrowSchema, records: &Vec<Ar
         .create(true)
         .open(path).await?;
     let mut arrow_writer = AsyncArrowWriter::try_new(file, arrow_schema.schema(), None)?;
-    for record in records {
-        arrow_writer.write(record.record_ref()).await?;
+    loop {
+        match stream.next_record_batch() {
+            Some(rb) => {
+                arrow_writer.write(rb.record_ref()).await?;
+            }
+            None => break
+        }
     }
     arrow_writer.flush().await?;
 

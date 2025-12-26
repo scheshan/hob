@@ -1,7 +1,8 @@
 mod schema;
-mod record_builder;
 mod record;
+mod array_builder;
+mod stream;
 
 pub use schema::ArrowSchema;
 pub use record::ArrowRecordBatch;
-pub use record_builder::RecordBatchBuilder;
+pub use stream::ArrowRecordBatchStream;

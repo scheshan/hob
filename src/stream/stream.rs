@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::arrow::ArrowSchema;
+use crate::arrow::{ArrowRecordBatchStream, ArrowSchema};
 use crate::entry::EntryBatch;
 use crate::id::IdGenerator;
 use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
@@ -47,8 +47,17 @@ impl Stream {
 
         let arrow_schema = self.generate_schema(&batch)?;
 
+        let mut stream = ArrowRecordBatchStream::new(arrow_schema.clone());
+        let mut arrow_record_batch_list = Vec::new();
+        loop {
+            match stream.next_record_batch() {
+                Some(record) => arrow_record_batch_list.push(record),
+                None => break,
+            }
+        }
+
         let mut inner = self.inner.write().unwrap();
-        inner.mem_table.add(arrow_schema, batch);
+        inner.mem_table.add(arrow_schema, arrow_record_batch_list);
 
         if inner.mem_table.approximate_size() > self.args.mem_table_size {
             log::info!("Generate new mem_table for stream: {}", self.name);
