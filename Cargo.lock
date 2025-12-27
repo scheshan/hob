@@ -677,6 +677,7 @@ dependencies = [
  "arrow",
  "arrow-array",
  "arrow-schema",
+ "bytes",
  "env_logger",
  "log",
  "parquet",
