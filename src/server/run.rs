@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use crate::arg::Args;
 use crate::entry::{Entry, EntryBatch};
-use crate::id::IdGenerator;
+use crate::server::id::IdGenerator;
 use crate::Result;
 use crate::schema::{refresh_schema_job, SchemaStore};
 use crate::server::server::Server;

@@ -1,4 +1,3 @@
-mod id;
 mod entry;
 mod schema;
 mod arrow;

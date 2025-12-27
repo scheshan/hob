@@ -6,7 +6,7 @@ use arrow_array::{Array, ArrayRef, BinaryArray, BooleanArray, Float64Array, Int6
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
-use arrow_schema::DataType;
+use arrow_schema::{DataType, SchemaRef};
 
 pub struct ArrowRecordBatchStream {
     schema: ArrowSchema,
@@ -19,6 +19,14 @@ pub struct ArrowRecordBatchStream {
 impl ArrowRecordBatchStream {
     pub fn new(schema: ArrowSchema) -> Self {
         Self::new_with_batch_size(schema, 819200)
+    }
+
+    pub fn arrow_schema(&self) -> &ArrowSchema {
+        &self.schema
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.schema()
     }
 
     pub fn new_with_batch_size(schema: ArrowSchema, batch_size: usize) -> Self {

@@ -1,22 +1,26 @@
-use crate::Result;
 use crate::arg::Args;
 use crate::arrow::{ArrowRecordBatchStream, ArrowSchema};
 use crate::entry::EntryBatch;
-use crate::id::IdGenerator;
-use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
-use crate::stream::{MemTable, Stream};
+use crate::server::id::IdGenerator;
+use crate::schema::{infer_schema, need_evolve_schema, SchemaStore};
+use crate::stream::{MemTable, SSTable, Stream};
+use crate::Result;
+use parquet::arrow::AsyncArrowWriter;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::mem;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use tokio::fs::OpenOptions;
 
 #[derive(Clone)]
 pub struct Server {
     args: Args,
     id_generator: IdGenerator,
     schema_store: SchemaStore,
-    streams: Arc<RwLock<HashMap<String, Stream>>>,
     mem_table_id: Arc<AtomicU64>,
+    ss_table_id: Arc<AtomicU64>,
     inner: Arc<RwLock<ServerInner>>,
 }
 
@@ -25,36 +29,11 @@ impl Server {
         Self {
             id_generator,
             schema_store,
-            streams: Arc::new(RwLock::new(HashMap::new())),
             args,
             mem_table_id: Arc::new(AtomicU64::new(1)),
+            ss_table_id: Arc::new(AtomicU64::new(1)),
             inner: Arc::new(RwLock::new(ServerInner::new())),
         }
-    }
-
-    pub fn get_stream(&self, name: String) -> Stream {
-        let guard = self.streams.read().unwrap();
-        let stream = guard.get(&name).map(|s| s.clone());
-        drop(guard);
-        if stream.is_some() {
-            return stream.unwrap();
-        }
-
-        let mut guard = self.streams.write().unwrap();
-        let stream = guard.entry(name.clone()).or_insert_with(|| {
-            Stream::new(
-                name,
-                self.args.clone(),
-                self.schema_store.clone(),
-                self.id_generator.clone(),
-            )
-        });
-        stream.clone()
-    }
-
-    pub fn all_streams(&self) -> Vec<Stream> {
-        let guard = self.streams.read().unwrap();
-        guard.iter().map(|e| e.1.clone()).collect()
     }
 
     pub fn args_ref(&self) -> &Args {
@@ -76,6 +55,10 @@ impl Server {
         let arrow_record_batch = stream.next_record_batch().unwrap();
 
         let mut inner = self.inner.write().unwrap();
+        if !inner.streams.contains_key(stream_name) {
+            inner.streams.insert(stream_name.clone(), Stream::new(stream_name.clone()));
+        }
+
         inner
             .mem_table
             .add(stream_name, arrow_schema, arrow_record_batch);
@@ -85,6 +68,70 @@ impl Server {
             let new_mem_table = MemTable::new(self.next_mem_table_id());
             let old_mem_table = mem::replace(&mut inner.mem_table, new_mem_table);
             inner.mem_table_list.push(Arc::new(old_mem_table));
+        }
+
+        Ok(())
+    }
+
+    pub async fn flush_mem_table(&self) -> Result<()> {
+        let mem_table_list = self.im_mem_table_list();
+
+        if mem_table_list.is_empty() {
+            return Ok(());
+        }
+
+        //flush ss_table
+        let mut max_mem_table_id = 0;
+        let mut all_stream_builder: HashMap<String, HashMap<u64, ArrowRecordBatchStream>> =
+            HashMap::new();
+        for mem_table in mem_table_list {
+            for (stream_name, partitions) in mem_table.streams() {
+                let stream_builder = all_stream_builder
+                    .entry(stream_name.clone())
+                    .or_insert_with(HashMap::new);
+
+                for (par_key, par) in partitions {
+                    let partition_builder = stream_builder
+                        .entry(*par_key)
+                        .or_insert_with(|| ArrowRecordBatchStream::new(par.schema().clone()));
+
+                    for batch in par.batches() {
+                        match partition_builder.add_record_batch(batch.clone()) {
+                            Err(e) => log::error!("Add record_batch failed: {}", e),
+                            Ok(_) => {}
+                        }
+                    }
+                }
+            }
+            max_mem_table_id = max(max_mem_table_id, mem_table.id());
+        }
+
+        let mut stream_ss_table: HashMap<String, Vec<Arc<SSTable>>> = HashMap::new();
+        for (stream_name, partitions) in all_stream_builder {
+            let mut ss_table_list = Vec::new();
+
+            for (par_key, builder) in partitions {
+                let ss_table_id = self.next_ss_table_id();
+                let ss_table = self
+                    .generate_ss_table(ss_table_id, &stream_name, par_key, builder)
+                    .await?;
+                ss_table_list.push(Arc::new(ss_table));
+            }
+            stream_ss_table.insert(stream_name, ss_table_list);
+        }
+
+        //replace memory data
+        let mut guard = self.inner.write().unwrap();
+        guard.mem_table_list = guard
+            .mem_table_list
+            .iter()
+            .filter(|m| m.id() > max_mem_table_id)
+            .map(|m| m.clone())
+            .collect();
+
+        for (stream_name, ss_table_list) in stream_ss_table {
+            let stream = guard.streams.get_mut(&stream_name).unwrap();
+            stream.extend_ss_table(ss_table_list);
         }
 
         Ok(())
@@ -132,14 +179,56 @@ impl Server {
         }
     }
 
-    pub fn next_mem_table_id(&self) -> u64 {
+    fn next_mem_table_id(&self) -> u64 {
         self.mem_table_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn next_ss_table_id(&self) -> u64 {
+        self.ss_table_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    async fn generate_ss_table(
+        &self,
+        id: u64,
+        stream_name: &String,
+        par_key: u64,
+        mut stream: ArrowRecordBatchStream,
+    ) -> Result<SSTable> {
+        let mut path: PathBuf = PathBuf::from(self.args.root_dir.as_str());
+        path.push("data");
+        path.push(stream_name);
+        path.push(par_key.to_string());
+        path.push(format!("{}.bin", id));
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(path)
+            .await?;
+        let mut arrow_writer = AsyncArrowWriter::try_new(file, stream.schema(), None)?;
+        loop {
+            match stream.next_record_batch() {
+                Some(rb) => {
+                    arrow_writer.write(rb.record_ref()).await?;
+                }
+                None => break,
+            }
+        }
+        arrow_writer.flush().await?;
+
+        Ok(SSTable::new(id))
+    }
+
+    fn im_mem_table_list(&self) -> Vec<Arc<MemTable>> {
+        let guard = self.inner.read().unwrap();
+        guard.mem_table_list.clone()
     }
 }
 
 struct ServerInner {
     mem_table: MemTable,
     mem_table_list: Vec<Arc<MemTable>>,
+    streams: HashMap<String, Stream>,
 }
 
 impl ServerInner {
@@ -147,6 +236,7 @@ impl ServerInner {
         Self {
             mem_table: MemTable::new(0),
             mem_table_list: Vec::new(),
+            streams: HashMap::new(),
         }
     }
 }

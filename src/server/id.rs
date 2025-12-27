@@ -64,7 +64,7 @@ impl IdRange {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::IdGenerator;
+    use crate::server::id::IdGenerator;
 
     #[test]
     fn test_generate() {
