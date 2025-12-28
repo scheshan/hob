@@ -15,7 +15,7 @@ pub enum ManifestRecord {
 
 #[derive(Clone)]
 pub struct Manifest {
-    dir: PathBuf,
+    dir: Arc<PathBuf>,
     inner: Arc<Mutex<ManifestInner>>,
 }
 
@@ -25,12 +25,12 @@ impl Manifest {
         let file = OpenOptions::new().create(true).write(true).open(&path)?;
 
         Ok(Self {
-            dir,
+            dir: Arc::new(dir),
             inner: Arc::new(Mutex::new(ManifestInner::new(file))),
         })
     }
 
-    pub async fn write(&self, record: ManifestRecord) -> Result<()> {
+    pub fn write(&self, record: ManifestRecord) -> Result<()> {
         let mut buf = BytesMut::new();
         buf.put_u64(0); //The frame length, we will calculate it later.
         match record {

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::signal::ctrl_c;
 use tokio::time::interval;
@@ -8,6 +9,7 @@ use crate::entry::{Entry, EntryBatch};
 use crate::server::id::IdGenerator;
 use crate::Result;
 use crate::schema::{refresh_schema_job, SchemaStore};
+use crate::server::manifest::Manifest;
 use crate::server::server::Server;
 use crate::stream::flush_mem_table_job;
 
@@ -34,7 +36,9 @@ async fn run_0(main_tracker: &TaskTracker, ct: CancellationToken, args: Args) ->
 
     let schema_store = init_schema_store(&main_tracker, ct.clone())?;
 
-    let server = Server::new(id_generator, schema_store, args);
+    let manifest = Manifest::new(PathBuf::from(args.root_dir.as_str()))?;
+
+    let server = Server::new(id_generator, schema_store, manifest, args);
 
     init_flush_mem_table_job(main_tracker, server.clone(), ct.clone());
 

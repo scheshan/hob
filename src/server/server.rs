@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::fs::OpenOptions;
+use crate::server::manifest::{Manifest, ManifestRecord};
 
 #[derive(Clone)]
 pub struct Server {
@@ -22,10 +23,11 @@ pub struct Server {
     mem_table_id: Arc<AtomicU64>,
     ss_table_id: Arc<AtomicU64>,
     inner: Arc<RwLock<ServerInner>>,
+    manifest: Manifest,
 }
 
 impl Server {
-    pub fn new(id_generator: IdGenerator, schema_store: SchemaStore, args: Args) -> Self {
+    pub fn new(id_generator: IdGenerator, schema_store: SchemaStore, manifest: Manifest, args: Args) -> Self {
         Self {
             id_generator,
             schema_store,
@@ -33,6 +35,7 @@ impl Server {
             mem_table_id: Arc::new(AtomicU64::new(1)),
             ss_table_id: Arc::new(AtomicU64::new(1)),
             inner: Arc::new(RwLock::new(ServerInner::new())),
+            manifest,
         }
     }
 
@@ -65,9 +68,11 @@ impl Server {
 
         if inner.mem_table.approximate_size() > self.args.mem_table_size {
             log::info!("Generate new mem_table for stream: {}", stream_name);
-            let new_mem_table = MemTable::new(self.next_mem_table_id());
+            let mem_table_id = self.next_mem_table_id();
+            let new_mem_table = MemTable::new(mem_table_id);
             let old_mem_table = mem::replace(&mut inner.mem_table, new_mem_table);
             inner.mem_table_list.push(Arc::new(old_mem_table));
+            self.manifest.write(ManifestRecord::NewMemTable(mem_table_id))?;
         }
 
         Ok(())
