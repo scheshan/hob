@@ -112,6 +112,7 @@ impl Server {
         }
 
         let mut stream_ss_table: HashMap<String, Vec<Arc<SSTable>>> = HashMap::new();
+        let mut manifest_record_vec = Vec::new();
         for (stream_name, partitions) in all_stream_builder {
             let mut ss_table_list = Vec::new();
 
@@ -121,9 +122,11 @@ impl Server {
                     .generate_ss_table(ss_table_id, &stream_name, par_key, builder)
                     .await?;
                 ss_table_list.push(Arc::new(ss_table));
+                manifest_record_vec.push((stream_name.clone(), par_key, ss_table_id));
             }
             stream_ss_table.insert(stream_name, ss_table_list);
         }
+        self.manifest.write(ManifestRecord::FlushMemTable(max_mem_table_id, manifest_record_vec))?;
 
         //replace memory data
         let mut guard = self.inner.write().unwrap();
