@@ -1,7 +1,8 @@
-use std::cmp::Ordering;
 use crate::entry::field::FieldData;
 use anyhow::anyhow;
+use bytes::{BufMut, BytesMut};
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time;
 use std::time::SystemTime;
@@ -66,8 +67,51 @@ impl EntryBatch {
                 Ordering::Greater
             } else {
                 r.id.cmp(&l.id)
-            }
+            };
         })
+    }
+
+    pub fn encode_to_bytes(&self, buf: &mut BytesMut) {
+        //8 byte for length
+        buf.put_u64(self.entries.len() as u64);
+
+        for entry in &self.entries {
+            buf.put_u64(entry.time); //8 byte for time
+            buf.put_u64(entry.id); //8 byte for id
+            buf.put_u64(entry.fields.len() as u64); //8 byte for fields length
+
+            for (field_name, field_data) in &entry.fields {
+                buf.put_u64(field_name.len() as u64); //8 byte for field name's length
+                buf.put_slice(field_name.as_bytes());
+                match field_data {
+                    FieldData::String(str) => {
+                        buf.put_u8(1);
+                        buf.put_u64(str.len() as u64); //8 byte for field name's length
+                        buf.put_slice(str.as_bytes());
+                    }
+                    FieldData::Bool(b) => {
+                        buf.put_u8(2);
+                        if *b {
+                            buf.put_u8(1);
+                        } else {
+                            buf.put_u8(0);
+                        }
+                    }
+                    FieldData::I64(num) => {
+                        buf.put_u8(3);
+                        buf.put_i64(*num);
+                    }
+                    FieldData::U64(num) => {
+                        buf.put_u8(3);
+                        buf.put_u64(*num);
+                    }
+                    FieldData::F64(num) => {
+                        buf.put_u8(3);
+                        buf.put_f64(*num);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -128,7 +172,6 @@ fn populate_fields(
 #[cfg(test)]
 mod tests {
     use crate::entry::{Entry, FieldData};
-    use arrow_schema::DataType;
     use serde_json::Value;
 
     #[test]

@@ -38,7 +38,7 @@ async fn run_0(main_tracker: &TaskTracker, ct: CancellationToken, args: Args) ->
 
     let manifest_writer = ManifestWriter::new(args.root_dir.clone())?;
 
-    let server = Server::new(id_generator, schema_store, manifest_writer, args);
+    let server = Server::new(id_generator, schema_store, manifest_writer, args)?;
 
     init_flush_mem_table_job(main_tracker, server.clone(), ct.clone());
 

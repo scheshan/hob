@@ -24,6 +24,7 @@ impl Args {
 
     pub fn init_directories(&self) {
         create_dir_all(self.root_dir.join("data")).unwrap();
+        create_dir_all(self.root_dir.join("wal")).unwrap();
     }
 }
 

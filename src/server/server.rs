@@ -5,7 +5,7 @@ use crate::entry::EntryBatch;
 use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::server::id::IdGenerator;
 use crate::storage::manifest::{ManifestWriter, ManifestRecord};
-use crate::storage::{MemTable, SSTable, SSTableKey, SSTableWriter};
+use crate::storage::{MemTable, SSTable, SSTableKey, SSTableWriter, WALWriter};
 use crate::stream::Stream;
 use chrono::{DateTime, Datelike};
 use std::cmp::max;
@@ -31,16 +31,18 @@ impl Server {
         schema_store: SchemaStore,
         manifest: ManifestWriter,
         args: Args,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let mem_table = MemTable::new(args.root_dir.clone(), 1)?;
+
+        Ok(Self {
             id_generator,
             schema_store,
             args,
             mem_table_id: Arc::new(AtomicU64::new(1)),
             ss_table_id: Arc::new(AtomicU64::new(1)),
-            inner: Arc::new(RwLock::new(ServerInner::new())),
+            inner: Arc::new(RwLock::new(ServerInner::new(mem_table))),
             manifest_writer: manifest,
-        }
+        })
     }
 
     pub fn args_ref(&self) -> &Args {
@@ -58,18 +60,19 @@ impl Server {
 
         let arrow_schema = self.generate_schema(stream_name, &batch)?;
 
-        let day_batches = self.group_entry_batch_by_day(batch);
         let mut inner = self.inner.write().unwrap();
-        inner.mem_table.add(stream_name, arrow_schema, day_batches);
+        inner.mem_table.add(stream_name, arrow_schema, batch)?;
 
         if inner.mem_table.approximate_size() > self.args.mem_table_size {
             log::info!("Generate new mem_table");
-            let mem_table_id = self.next_mem_table_id();
-            let new_mem_table = MemTable::new(mem_table_id);
+            let new_mem_table_id = self.next_mem_table_id();
+            let new_mem_table = MemTable::new(self.args.root_dir.clone(), new_mem_table_id)?;
+            let manifest_record = ManifestRecord::NewMemTable(new_mem_table_id);
+            self.manifest_writer
+                .write(manifest_record)?;
+
             let old_mem_table = mem::replace(&mut inner.mem_table, new_mem_table);
             inner.mem_table_list.push(Arc::new(old_mem_table));
-            self.manifest_writer
-                .write(ManifestRecord::NewMemTable(mem_table_id))?;
         }
 
         Ok(())
@@ -199,37 +202,6 @@ impl Server {
         guard.mem_table_list.clone()
     }
 
-    fn group_entry_batch_by_day(&self, mut batch: EntryBatch) -> HashMap<u64, EntryBatch> {
-        let mut res = HashMap::new();
-
-        batch.sort();
-
-        let mut last_key = self.get_day(batch.entries[0].time);
-        let mut last_batch = EntryBatch::new();
-
-        for entry in batch.entries {
-            let day_key = self.get_day(entry.time);
-            if day_key != last_key {
-                res.insert(last_key, last_batch);
-                last_batch = EntryBatch::new();
-                last_key = day_key;
-            }
-
-            last_batch.add(entry);
-        }
-
-        if !last_batch.entries.is_empty() {
-            res.insert(last_key, last_batch);
-        }
-
-        res
-    }
-
-    fn get_day(&self, entry_time: u64) -> u64 {
-        let time = DateTime::from_timestamp_millis(entry_time as i64).unwrap();
-        time.year() as u64 * 10000 + time.month() as u64 * 100 + time.day() as u64
-    }
-
     fn make_room_for_stream(&self, stream_name: &String) {
         let guard = self.inner.read().unwrap();
         if guard.streams.contains_key(stream_name) {
@@ -251,9 +223,9 @@ struct ServerInner {
 }
 
 impl ServerInner {
-    pub fn new() -> Self {
+    pub fn new(mem_table: MemTable) -> Self {
         Self {
-            mem_table: MemTable::new(0),
+            mem_table,
             mem_table_list: Vec::new(),
             streams: HashMap::new(),
         }
