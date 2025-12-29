@@ -1,33 +1,34 @@
 use crate::Result;
+use crate::storage::SSTableKey;
+use anyhow::anyhow;
+use bytes::{Buf, Bytes};
+use parquet::file::reader::ChunkReader;
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use anyhow::anyhow;
 use tokio_util::bytes::{BufMut, BytesMut};
-use bytes::{Buf, Bytes};
-use parquet::file::reader::ChunkReader;
-use crate::storage::SSTableKey;
 
+const MANIFEST_FILE_NAME: &str = "MANIFEST";
+
+#[derive(Debug)]
 pub enum ManifestRecord {
     NewMemTable(u64),
     FlushMemTable(u64, Vec<SSTableKey>),
 }
 
 #[derive(Clone)]
-pub struct Manifest {
-    dir: Arc<PathBuf>,
-    inner: Arc<Mutex<ManifestInner>>,
+pub struct ManifestWriter {
+    inner: Arc<Mutex<File>>,
 }
 
-impl Manifest {
-    pub fn new(dir: PathBuf) -> Result<Self> {
-        let path = dir.join("MANIFEST");
+impl ManifestWriter {
+    pub fn new(dir: Arc<PathBuf>) -> Result<Self> {
+        let path = dir.join(MANIFEST_FILE_NAME);
         let file = OpenOptions::new().create(true).write(true).open(&path)?;
 
         Ok(Self {
-            dir: Arc::new(dir),
-            inner: Arc::new(Mutex::new(ManifestInner::new(file))),
+            inner: Arc::new(Mutex::new(file)),
         })
     }
 
@@ -61,20 +62,30 @@ impl Manifest {
         }
 
         let mut guard = self.inner.lock().unwrap();
-        guard.file.write(&buf)?;
-        guard.file.sync_all()?;
+        guard.write(&buf)?;
+        guard.sync_all()?;
 
         Ok(())
     }
+}
 
-    pub async fn load(&self) -> Result<Vec<ManifestRecord>> {
+pub struct ManifestReader {
+    file: File,
+}
+
+impl ManifestReader {
+    pub fn new(dir: Arc<PathBuf>) -> Result<Self> {
+        let path = dir.join(MANIFEST_FILE_NAME);
+        let file = OpenOptions::new().read(true).open(&path)?;
+        Ok(Self { file })
+    }
+
+    pub async fn read(mut self) -> Result<Vec<ManifestRecord>> {
         let mut vec = Vec::new();
         let mut len_buf = [0u8; 8];
-        let mut guard = self.inner.lock().unwrap();
-        guard.file.seek(SeekFrom::Start(0))?;
 
         loop {
-            let size = guard.file.read(&mut len_buf)?;
+            let size = self.file.read(&mut len_buf)?;
             if size == 0 {
                 break;
             }
@@ -84,7 +95,7 @@ impl Manifest {
 
             let len = u64::from_be_bytes(len_buf) as usize;
             let mut data_buf = vec![0u8; len];
-            let size = guard.file.read(&mut data_buf)?;
+            let size = self.file.read(&mut data_buf)?;
             if size < len {
                 return Err(anyhow!("Invalid manifest file"));
             }
@@ -121,15 +132,5 @@ impl Manifest {
         }
 
         Ok(vec)
-    }
-}
-
-struct ManifestInner {
-    file: File,
-}
-
-impl ManifestInner {
-    pub fn new(file: File) -> Self {
-        Self { file }
     }
 }

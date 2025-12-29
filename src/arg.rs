@@ -6,7 +6,7 @@ use log::LevelFilter;
 
 #[derive(Clone)]
 pub struct Args {
-    pub root_dir: Arc<String>,
+    pub root_dir: Arc<PathBuf>,
     pub log_level: Arc<String>,
     pub mem_table_size: usize,
     pub mem_table_flush_seconds: u64,
@@ -23,8 +23,7 @@ impl Args {
     }
 
     pub fn init_directories(&self) {
-        let root = PathBuf::from(self.root_dir.as_str());
-        create_dir_all(root.join("data")).unwrap();
+        create_dir_all(self.root_dir.join("data")).unwrap();
     }
 }
 
@@ -32,7 +31,7 @@ impl Args {
 impl Default for Args {
     fn default() -> Self {
         Self {
-            root_dir: Arc::new(String::from("D:\\data\\hob")),
+            root_dir: Arc::new(PathBuf::from("D:\\data\\hob")),
             log_level: Arc::new(String::from("info")),
             mem_table_size: 100 * 1024,
             mem_table_flush_seconds: 30,

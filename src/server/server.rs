@@ -4,7 +4,7 @@ use crate::arrow::{ArrowRecordBatchStream, ArrowSchema};
 use crate::entry::EntryBatch;
 use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::server::id::IdGenerator;
-use crate::server::manifest::{Manifest, ManifestRecord};
+use crate::storage::manifest::{ManifestWriter, ManifestRecord};
 use crate::storage::{MemTable, SSTable, SSTableKey, SSTableWriter};
 use crate::stream::Stream;
 use chrono::{DateTime, Datelike};
@@ -22,14 +22,14 @@ pub struct Server {
     mem_table_id: Arc<AtomicU64>,
     ss_table_id: Arc<AtomicU64>,
     inner: Arc<RwLock<ServerInner>>,
-    manifest: Manifest,
+    manifest_writer: ManifestWriter,
 }
 
 impl Server {
     pub fn new(
         id_generator: IdGenerator,
         schema_store: SchemaStore,
-        manifest: Manifest,
+        manifest: ManifestWriter,
         args: Args,
     ) -> Self {
         Self {
@@ -39,7 +39,7 @@ impl Server {
             mem_table_id: Arc::new(AtomicU64::new(1)),
             ss_table_id: Arc::new(AtomicU64::new(1)),
             inner: Arc::new(RwLock::new(ServerInner::new())),
-            manifest,
+            manifest_writer: manifest,
         }
     }
 
@@ -63,12 +63,12 @@ impl Server {
         inner.mem_table.add(stream_name, arrow_schema, day_batches);
 
         if inner.mem_table.approximate_size() > self.args.mem_table_size {
-            log::info!("Generate new mem_table for stream: {}", stream_name);
+            log::info!("Generate new mem_table");
             let mem_table_id = self.next_mem_table_id();
             let new_mem_table = MemTable::new(mem_table_id);
             let old_mem_table = mem::replace(&mut inner.mem_table, new_mem_table);
             inner.mem_table_list.push(Arc::new(old_mem_table));
-            self.manifest
+            self.manifest_writer
                 .write(ManifestRecord::NewMemTable(mem_table_id))?;
         }
 
@@ -121,7 +121,7 @@ impl Server {
             ss_table_keys.push(ss_table_key);
         }
 
-        self.manifest.write(ManifestRecord::FlushMemTable(
+        self.manifest_writer.write(ManifestRecord::FlushMemTable(
             max_mem_table_id,
             ss_table_keys.clone(),
         ))?;
