@@ -25,7 +25,7 @@ pub struct ManifestWriter {
 impl ManifestWriter {
     pub fn new(dir: Arc<PathBuf>) -> Result<Self> {
         let path = dir.join(MANIFEST_FILE_NAME);
-        let file = OpenOptions::new().create(true).write(true).open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         Ok(Self {
             inner: Arc::new(Mutex::new(file)),
