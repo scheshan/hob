@@ -1,9 +1,10 @@
+use std::cmp::Ordering;
+use crate::entry::field::FieldData;
 use anyhow::anyhow;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time;
 use std::time::SystemTime;
-use crate::entry::field::FieldData;
 
 pub struct Entry {
     pub(crate) time: u64,
@@ -34,7 +35,40 @@ impl TryFrom<Value> for Entry {
 }
 
 pub struct EntryBatch {
-    pub(crate) entries: Vec<Entry>
+    pub(crate) entries: Vec<Entry>,
+}
+
+impl EntryBatch {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn from_entries(entries: Vec<Entry>) -> Self {
+        Self { entries }
+    }
+
+    pub fn add(&mut self, entry: Entry) {
+        self.entries.push(entry);
+    }
+
+    //Sort EntryBatch by time desc, then by id desc
+    pub fn sort(&mut self) {
+        if self.entries.is_empty() {
+            return;
+        }
+
+        self.entries.sort_by(|l, r| {
+            return if l.time > r.time {
+                Ordering::Less
+            } else if l.time < r.time {
+                Ordering::Greater
+            } else {
+                r.id.cmp(&l.id)
+            }
+        })
+    }
 }
 
 fn parse_time(value: &Value) -> u64 {
@@ -93,9 +127,9 @@ fn populate_fields(
 
 #[cfg(test)]
 mod tests {
+    use crate::entry::{Entry, FieldData};
     use arrow_schema::DataType;
     use serde_json::Value;
-    use crate::entry::{Entry, FieldData};
 
     #[test]
     fn test_from_json() {

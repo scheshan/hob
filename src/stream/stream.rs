@@ -1,4 +1,4 @@
-use crate::stream::ss_table::SSTable;
+use crate::storage::SSTable;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl Stream {
         self.ss_table_list.clone()
     }
 
-    pub fn extend_ss_table(&mut self, ss_table_list: Vec<Arc<SSTable>>) {
-        self.ss_table_list.extend(ss_table_list)
+    pub fn add_ss_table(&mut self, ss_table: SSTable) {
+        self.ss_table_list.push(Arc::new(ss_table));
     }
 }

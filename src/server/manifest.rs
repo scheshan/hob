@@ -7,10 +7,11 @@ use anyhow::anyhow;
 use tokio_util::bytes::{BufMut, BytesMut};
 use bytes::{Buf, Bytes};
 use parquet::file::reader::ChunkReader;
+use crate::storage::SSTableKey;
 
 pub enum ManifestRecord {
     NewMemTable(u64),
-    FlushMemTable(u64, Vec<(String, u64, u64)>),
+    FlushMemTable(u64, Vec<SSTableKey>),
 }
 
 #[derive(Clone)]
@@ -42,11 +43,12 @@ impl Manifest {
                 buf.put_u8(2);
                 buf.put_u64(mem_table_id);
                 buf.put_u64(list.len() as u64);
-                for (stream_name, par_key, ss_table_id) in list {
-                    buf.put_u64(stream_name.len() as u64);
-                    buf.put_slice(stream_name.as_bytes());
-                    buf.put_u64(par_key);
-                    buf.put_u64(ss_table_id);
+                for ss_table_key in list {
+                    buf.put_u64(ss_table_key.stream_name().len() as u64);
+                    buf.put_slice(ss_table_key.stream_name().as_bytes());
+                    buf.put_u64(ss_table_key.day());
+                    buf.put_u64(ss_table_key.version());
+                    buf.put_u64(ss_table_key.id())
                 }
             }
         }
@@ -103,10 +105,11 @@ impl Manifest {
                         let stream_name_length = data.get_u64() as usize;
                         let stream_name = data.get_bytes(0, stream_name_length)?;
                         let stream_name = String::from_utf8_lossy(&stream_name).to_string();
-                        let par_key = data.get_u64();
+                        let day = data.get_u64();
+                        let version = data.get_u64();
                         let ss_table_id = data.get_u64();
 
-                        list.push((stream_name, par_key, ss_table_id));
+                        list.push(SSTableKey::new_raw(stream_name, day, version, ss_table_id));
                     }
                     let record = ManifestRecord::FlushMemTable(mem_table_id, list);
                     vec.push(record);

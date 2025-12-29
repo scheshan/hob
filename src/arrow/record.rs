@@ -1,6 +1,7 @@
 use crate::arrow::schema::ArrowSchema;
 use arrow_array::RecordBatch;
 
+#[derive(Clone)]
 pub struct ArrowRecordBatch {
     record: RecordBatch,
     schema: ArrowSchema,
