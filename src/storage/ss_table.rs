@@ -16,7 +16,7 @@ impl SSTable {
     }
 }
 
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq, Debug)]
 pub struct SSTableKey {
     prefix: PartitionKey,
     id: u64,
@@ -54,7 +54,7 @@ impl SSTableKey {
 }
 
 pub struct SSTableWriter {
-    root_dir: Arc<String>,
+    root_dir: Arc<PathBuf>,
     key: SSTableKey,
     schema: ArrowSchema,
     writer: AsyncArrowWriter<File>,
@@ -62,11 +62,11 @@ pub struct SSTableWriter {
 
 impl SSTableWriter {
     pub async fn try_new(
-        root_dir: Arc<String>,
+        root_dir: Arc<PathBuf>,
         key: SSTableKey,
         schema: ArrowSchema,
     ) -> Result<Self> {
-        let dir = PathBuf::from(root_dir.as_str())
+        let dir = root_dir
             .join("data")
             .join(&key.stream_name())
             .join(key.day().to_string());

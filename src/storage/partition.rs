@@ -3,7 +3,7 @@ use crate::entry::EntryBatch;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-#[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct PartitionKey {
     stream_name: String,
     day: u64,
