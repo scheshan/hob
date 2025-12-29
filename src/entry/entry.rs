@@ -1,6 +1,6 @@
 use crate::entry::field::FieldData;
 use anyhow::anyhow;
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut, TryGetError};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -46,8 +46,10 @@ impl EntryBatch {
         }
     }
 
-    pub fn from_entries(entries: Vec<Entry>) -> Self {
-        Self { entries }
+    pub fn new_with_capacity(cap: usize) -> Self {
+        Self {
+            entries: Vec::with_capacity(cap),
+        }
     }
 
     pub fn add(&mut self, entry: Entry) {
@@ -72,6 +74,8 @@ impl EntryBatch {
     }
 
     pub fn encode_to_bytes(&self, buf: &mut BytesMut) {
+        //todo add checksum
+
         //8 byte for length
         buf.put_u64(self.entries.len() as u64);
 
@@ -112,6 +116,58 @@ impl EntryBatch {
                 }
             }
         }
+    }
+}
+
+impl TryFrom<Bytes> for EntryBatch {
+    type Error = TryGetError;
+
+    fn try_from(mut value: Bytes) -> Result<Self, Self::Error> {
+        let len = value.try_get_u64()? as usize;
+        let mut batch = EntryBatch::new_with_capacity(len);
+
+        for i in 0..len {
+            let time = value.try_get_u64()?;
+            let id = value.try_get_u64()?;
+            let field_len = value.try_get_u64()? as usize;
+            let mut fields = HashMap::new();
+
+            for j in 0..field_len {
+                let key = try_get_string_from_bytes(&mut value)?;
+                let typ = value.try_get_u8()?;
+                match typ {
+                    1 => {
+                        let str = try_get_string_from_bytes(&mut value)?;
+                        fields.insert(key, FieldData::String(str));
+                    }
+                    2 => {
+                        let num = value.try_get_u8()?;
+                        fields.insert(key, FieldData::Bool(num == 1));
+                    }
+                    3 => {
+                        let num = value.try_get_i64()?;
+                        fields.insert(key, FieldData::I64(num));
+                    }
+                    4 => {
+                        let num = value.try_get_u64()?;
+                        fields.insert(key, FieldData::U64(num));
+                    }
+                    _ => {
+                        let num = value.try_get_f64()?;
+                        fields.insert(key, FieldData::F64(num));
+                    }
+                }
+            }
+
+            let entry = Entry {
+                time,
+                id,
+                fields
+            };
+            batch.entries.push(entry);
+        }
+
+        Ok(batch)
     }
 }
 
@@ -167,6 +223,21 @@ fn populate_fields(
             populate_fields(fields, Some(key.as_str()), child_key, child_value);
         }
     }
+}
+
+fn try_get_string_from_bytes(buf: &mut Bytes) -> Result<String, TryGetError> {
+    let len = buf.try_get_u64()? as usize;
+    if buf.len() < len {
+        return Err(TryGetError {
+            requested: len,
+            available: buf.len(),
+        });
+    }
+
+    let slice = buf.slice(..len);
+    let str = String::from_utf8_lossy(&slice).to_string();
+    buf.advance(len);
+    Ok(str)
 }
 
 #[cfg(test)]
