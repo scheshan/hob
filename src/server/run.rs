@@ -1,15 +1,12 @@
 use crate::Result;
 use crate::arg::Args;
-use crate::entry::{Entry, EntryBatch};
 use crate::schema::{SchemaStore, refresh_schema_job};
 use crate::server::id::IdGenerator;
 use crate::server::server::{Server, ServerRecoveryState};
-use crate::storage::manifest::ManifestWriter;
-use crate::storage::{ManifestReader, ManifestRecord, SSTable, SSTableKey};
+use crate::storage::{ManifestReader, ManifestRecord, SSTableKey, ManifestWriter};
 use crate::stream::flush_mem_table_job;
 use std::cmp::max;
-use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::collections::{HashMap};
 use std::time::Duration;
 use serde_json::Value;
 use tokio::signal::ctrl_c;

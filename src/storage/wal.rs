@@ -1,11 +1,11 @@
+use crate::entry::EntryBatch;
+use crate::{entry, Result};
+use anyhow::anyhow;
+use bytes::Bytes;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use crate::{entry, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
-use anyhow::anyhow;
-use bytes::{Bytes, BytesMut};
-use crate::entry::EntryBatch;
 
 pub struct WALWriter {
     file: File,
@@ -56,11 +56,9 @@ impl WALReader {
         }
 
         let len = u64::from_be_bytes(self.len_buf) as usize;
-        let mut buf = BytesMut::with_capacity(len);
-        self.file.read_exact(&mut buf)?;
-        let batch = entry::decode_from_bytes(&mut buf)?;
-
-        buf.clear();
+        let mut buf = vec![0; len];
+        self.file.read_exact(&mut buf[..])?;
+        let batch = entry::decode_from_bytes(&mut Bytes::from(buf))?;
 
         Ok(Some(batch))
     }

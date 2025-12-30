@@ -1,13 +1,13 @@
 use crate::arrow::ArrowSchema;
 use crate::entry::EntryBatch;
 use crate::storage::partition::Partitions;
+use crate::storage::wal::WALReader;
 use crate::storage::{PartitionData, PartitionKey};
+use crate::Result;
+use chrono::{DateTime, Datelike};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use chrono::{DateTime, Datelike};
-use crate::storage::wal::{WALReader, WALWriter};
-use crate::Result;
 
 pub struct MemTable {
     id: u64,

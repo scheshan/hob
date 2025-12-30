@@ -91,7 +91,7 @@ pub fn encode_to_bytes(buf: &mut BytesMut, batch: &EntryBatch) {
     }
 }
 
-pub fn decode_from_bytes(buf: &mut BytesMut) -> crate::Result<EntryBatch> {
+pub fn decode_from_bytes(buf: &mut Bytes) -> crate::Result<EntryBatch> {
     //region stream_name
     let stream_name = try_get_string_from_bytes(buf)?;
     //endregion
@@ -180,7 +180,7 @@ fn encode_string_to_bytes(buf: &mut BytesMut, str: &String) {
     buf.put_slice(str.as_bytes());
 }
 
-fn try_get_string_from_bytes(buf: &mut BytesMut) -> Result<String, TryGetError> {
+fn try_get_string_from_bytes(buf: &mut Bytes) -> Result<String, TryGetError> {
     let len = buf.try_get_u64()? as usize;
     if buf.len() < len {
         return Err(TryGetError {

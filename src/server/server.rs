@@ -123,8 +123,6 @@ impl Server {
         let mut buf = BytesMut::new();
         entry::encode_to_bytes(&mut buf, &batch);
 
-        log::info!("encoded length: {}", buf.len());
-
         let mut inner = self.inner.write().unwrap();
         inner.wal_writer.write(buf)?;
         inner
