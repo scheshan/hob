@@ -80,9 +80,9 @@ impl Server {
             mem_table = mem_table_list.remove(mem_table_list.len() - 1);
             wal_writer = WALWriter::new(args.root_dir.clone(), mem_table.id())?;
         } else {
+            max_mem_table_id += 1;
             mem_table = MemTable::new(max_mem_table_id);
             wal_writer = WALWriter::new(args.root_dir.clone(), mem_table.id())?;
-            max_mem_table_id += 1;
         }
 
         let mut inner = ServerInner {
@@ -100,8 +100,8 @@ impl Server {
             id_generator,
             schema_store,
             args,
-            mem_table_id: Arc::new(AtomicU64::new(max_mem_table_id)),
-            ss_table_id: Arc::new(AtomicU64::new(max_ss_table_id)),
+            mem_table_id: Arc::new(AtomicU64::new(max_mem_table_id + 1)),
+            ss_table_id: Arc::new(AtomicU64::new(max_ss_table_id + 1)),
             manifest_writer,
             inner: Arc::new(RwLock::new(inner)),
         })
