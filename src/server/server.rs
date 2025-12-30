@@ -5,7 +5,6 @@ use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::server::id::IdGenerator;
 use crate::storage::manifest::{ManifestRecord, ManifestWriter};
 use crate::storage::{MemTable, SSTable, SSTableKey, SSTableWriter, WALWriter};
-use crate::stream::Stream;
 use crate::{Result, entry};
 use anyhow::anyhow;
 use arrow_schema::SchemaRef;
@@ -16,6 +15,7 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use crate::storage::stream::Stream;
 
 #[derive(Clone)]
 pub struct Server {
