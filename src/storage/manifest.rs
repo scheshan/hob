@@ -135,3 +135,48 @@ impl ManifestReader {
         Ok(vec)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use tempfile::tempdir;
+    use crate::storage::{ManifestReader, ManifestRecord, ManifestWriter, SSTableKey};
+
+    #[test]
+    fn test_write_and_read() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let writer = ManifestWriter::new(Arc::new(dir.path().to_path_buf()))?;
+
+        writer.write(ManifestRecord::NewMemTable(1000))?;
+        writer.write(ManifestRecord::NewMemTable(2000))?;
+        writer.write(ManifestRecord::FlushMemTable(100, vec![
+            SSTableKey::new_raw("test1".to_string(), 20251230, 1, 1),
+            SSTableKey::new_raw("test1".to_string(), 20251231, 1, 2),
+            SSTableKey::new_raw("test1".to_string(), 20251232, 1, 3),
+        ]))?;
+        writer.write(ManifestRecord::NewMemTable(3000))?;
+
+        drop(writer);
+
+        let reader = ManifestReader::new(Arc::new(dir.path().to_path_buf()))?;
+
+        let vec = reader.read()?;
+        let ManifestRecord::NewMemTable(num) = &vec[0] else {
+            panic!("Read failed");
+        };
+        assert_eq!(*num, 1000);
+        let ManifestRecord::NewMemTable(num) = &vec[1] else {
+            panic!("Read failed");
+        };
+        assert_eq!(*num, 2000);
+        let ManifestRecord::FlushMemTable(id, ss_table_list) = &vec[2] else {
+            panic!("Read failed");
+        };
+        assert_eq!(*id, 100);
+        assert_eq!(ss_table_list.len(), 3);
+        assert_eq!(ss_table_list[0].stream_name(), "test1");
+        assert_eq!(ss_table_list[0].day(), 20251230);
+
+        Ok(())
+    }
+}
