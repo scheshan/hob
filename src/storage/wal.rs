@@ -15,10 +15,11 @@ pub struct WALWriter {
 impl WALWriter {
     pub fn new(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
         let path = root_dir.join("wal").join(format!("{}.bin", id));
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .write(true)
-            .create_new(true)
+            .create(true)
             .open(path)?;
+        file.seek(SeekFrom::End(0))?;
 
         Ok(Self { file, buf: BytesMut::new() })
     }
@@ -27,12 +28,6 @@ impl WALWriter {
         self.file.write_all(&self.buf)?;
         self.file.sync_all()?;
 
-        Ok(())
-    }
-
-    pub fn set_to_file_end(&mut self) -> Result<()> {
-        self.file.seek(SeekFrom::End(0))?;
-        
         Ok(())
     }
 }
@@ -47,8 +42,7 @@ impl WALReader {
     pub fn new(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
         let path = root_dir.join("wal").join(format!("{}.bin", id));
         let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
+            .read(true)
             .open(path)?;
 
         Ok(Self { id, file, len_buf: [0u8; 8] })

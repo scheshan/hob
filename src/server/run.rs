@@ -74,7 +74,7 @@ fn init_server(id_generator: IdGenerator, schema_store: SchemaStore, args: Args)
     let manifest_records = manifest_reader.read()?;
     if manifest_records.is_empty() {
         log::info!("No recovery data, create a new server");
-        let server = Server::new(id_generator, schema_store, manifest_writer, args)?;
+        let server = Server::new(id_generator, schema_store, manifest_writer, args, None)?;
         return Ok(server);
     }
 
@@ -106,7 +106,7 @@ fn init_server(id_generator: IdGenerator, schema_store: SchemaStore, args: Args)
 
     let recovery_state =
         ServerRecoveryState::new(mem_table_ids, flush_mem_table_id, stream_ss_table_keys);
-    Server::recovery(id_generator, schema_store, manifest_writer, args, recovery_state)
+    Server::new(id_generator, schema_store, manifest_writer, args, Some(recovery_state))
 }
 
 fn init_flush_mem_table_job(tracker: &TaskTracker, server: Server, ct: CancellationToken) {

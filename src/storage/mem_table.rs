@@ -13,26 +13,21 @@ pub struct MemTable {
     id: u64,
     approximate_size: usize,
 
-    wal_writer: WALWriter,
-
     //The mem_table data is grouped first by stream_name, then by day, then by schema version.
     data: HashMap<String, Partitions>,
 }
 
 impl MemTable {
-    pub fn new(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
-        let wal_writer = WALWriter::new(root_dir, id)?;
-
-        Ok(Self {
+    pub fn new(id: u64) -> Self {
+        Self {
             id,
             approximate_size: 0,
-            wal_writer,
             data: HashMap::new(),
-        })
+        }
     }
 
     pub fn recovery(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
-        let mut mem_table = Self::new(root_dir.clone(), id)?;
+        let mut mem_table = Self::new(id);
 
         let mut wal_reader = WALReader::new(root_dir, id)?;
         loop {
@@ -84,10 +79,6 @@ impl MemTable {
         }
 
         Ok(())
-    }
-
-    pub fn wal_writer(&mut self) -> &mut WALWriter {
-        &mut self.wal_writer
     }
 
     ///The mem_table data is grouped first by stream_name, then by day, then by schema version.
