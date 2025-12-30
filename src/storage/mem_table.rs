@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use chrono::{DateTime, Datelike};
-use crate::storage::wal::WALWriter;
+use crate::storage::wal::{WALReader, WALWriter};
 use crate::Result;
 
 pub struct MemTable {
@@ -31,6 +31,24 @@ impl MemTable {
         })
     }
 
+    pub fn recovery(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
+        let mut mem_table = Self::new(root_dir.clone(), id)?;
+
+        let mut wal_reader = WALReader::new(root_dir, id)?;
+        loop {
+            match wal_reader.next_batch()? {
+                Some(batch) => {
+                    mem_table.add(&batch.stream_name.clone(), batch.schema.clone(), batch)?;
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+
+        Ok(mem_table)
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -48,8 +66,6 @@ impl MemTable {
         if !self.data.contains_key(stream_name) {
             self.data.insert(stream_name.clone(), Partitions::new());
         }
-
-        self.wal_writer.write(&batch)?;
 
         let daily_batches = self.group_entry_batch_by_day(batch);
         let partitions = self.data.get_mut(stream_name).unwrap();
@@ -70,6 +86,10 @@ impl MemTable {
         Ok(())
     }
 
+    pub fn wal_writer(&mut self) -> &mut WALWriter {
+        &mut self.wal_writer
+    }
+
     ///The mem_table data is grouped first by stream_name, then by day, then by schema version.
     pub fn partitions(&self) -> &HashMap<String, Partitions> {
         &self.data
@@ -78,16 +98,19 @@ impl MemTable {
     fn group_entry_batch_by_day(&self, mut batch: EntryBatch) -> HashMap<u64, EntryBatch> {
         let mut res = HashMap::new();
 
+        let stream_name = batch.stream_name.clone();
+        let schema = batch.schema.clone();
+
         batch.sort();
 
         let mut last_key = self.get_day(batch.entries[0].time);
-        let mut last_batch = EntryBatch::new();
+        let mut last_batch = EntryBatch::new(stream_name.clone(), schema.clone());
 
         for entry in batch.entries {
             let day_key = self.get_day(entry.time);
             if day_key != last_key {
                 res.insert(last_key, last_batch);
-                last_batch = EntryBatch::new();
+                last_batch = EntryBatch::new(stream_name.clone(), schema.clone());
                 last_key = day_key;
             }
 

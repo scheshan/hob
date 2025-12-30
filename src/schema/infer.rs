@@ -47,7 +47,7 @@ mod tests {
 }";
 
         let value = serde_json::from_str::<Value>(json)?;
-        let entry = Entry::try_from(value)?;
+        let entry = Entry::try_from(&value)?;
         let schema = infer_schema(&entry);
 
         assert_eq!(*schema.field_with_name("string")?.data_type(), DataType::Binary);

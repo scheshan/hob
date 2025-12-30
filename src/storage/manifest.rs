@@ -80,7 +80,7 @@ impl ManifestReader {
         Ok(Self { file })
     }
 
-    pub async fn read(mut self) -> Result<Vec<ManifestRecord>> {
+    pub fn read(mut self) -> Result<Vec<ManifestRecord>> {
         let mut vec = Vec::new();
         let mut len_buf = [0u8; 8];
 
