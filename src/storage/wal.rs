@@ -9,7 +9,6 @@ use crate::entry::EntryBatch;
 
 pub struct WALWriter {
     file: File,
-    buf: BytesMut,
 }
 
 impl WALWriter {
@@ -21,11 +20,11 @@ impl WALWriter {
             .open(path)?;
         file.seek(SeekFrom::End(0))?;
 
-        Ok(Self { file, buf: BytesMut::new() })
+        Ok(Self { file })
     }
 
     pub fn write(&mut self, buf: impl AsRef<[u8]>) -> Result<()> {
-        self.file.write_all(&self.buf)?;
+        self.file.write_all(buf.as_ref())?;
         self.file.sync_all()?;
 
         Ok(())
@@ -58,7 +57,7 @@ impl WALReader {
 
         let len = u64::from_be_bytes(self.len_buf) as usize;
         let mut buf = BytesMut::with_capacity(len);
-        self.file.read_exact(&mut buf[..len])?;
+        self.file.read_exact(&mut buf)?;
         let batch = entry::decode_from_bytes(&mut buf)?;
 
         buf.clear();

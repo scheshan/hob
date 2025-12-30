@@ -126,7 +126,7 @@ impl Server {
         log::info!("encoded length: {}", buf.len());
 
         let mut inner = self.inner.write().unwrap();
-        inner.wal_writer.write(&buf[..buf.len()])?;
+        inner.wal_writer.write(buf)?;
         inner
             .mem_table
             .add(stream_name, batch.schema.clone(), batch)?;

@@ -1,10 +1,10 @@
-use crate::Result;
 use crate::storage::SSTableKey;
+use crate::Result;
 use anyhow::anyhow;
 use bytes::{Buf, Bytes};
 use parquet::file::reader::ChunkReader;
 use std::fs::{File, OpenOptions};
-use std::io::{Error, Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio_util::bytes::{BufMut, BytesMut};
@@ -116,6 +116,7 @@ impl ManifestReader {
                         let stream_name_length = data.get_u64() as usize;
                         let stream_name = data.get_bytes(0, stream_name_length)?;
                         let stream_name = String::from_utf8_lossy(&stream_name).to_string();
+                        data.advance(stream_name_length);
                         let day = data.get_u64();
                         let version = data.get_u64();
                         let ss_table_id = data.get_u64();

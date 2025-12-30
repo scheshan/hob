@@ -78,7 +78,7 @@ fn init_server(id_generator: IdGenerator, schema_store: SchemaStore, args: Args)
         return Ok(server);
     }
 
-    log::info!("Recovering server from manifest");
+    log::info!("Recovering server from manifest: {:?}", manifest_records);
     let mut mem_table_ids: Vec<u64> = Vec::new();
     let mut flush_mem_table_id: Option<u64> = None;
     let mut stream_ss_table_keys: HashMap<String, Vec<SSTableKey>> = HashMap::new();
