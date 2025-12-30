@@ -2,7 +2,7 @@ use crate::entry::EntryBatch;
 use crate::{entry, Result};
 use anyhow::anyhow;
 use bytes::Bytes;
-use std::fs::{File, OpenOptions};
+use std::fs::{remove_file, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ pub struct WALWriter {
 
 impl WALWriter {
     pub fn new(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
-        let path = root_dir.join("wal").join(format!("{}.bin", id));
+        let path = wal_file_path(root_dir, id);
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -39,7 +39,7 @@ pub struct WALReader {
 
 impl WALReader {
     pub fn new(root_dir: Arc<PathBuf>, id: u64) -> Result<Self> {
-        let path = root_dir.join("wal").join(format!("{}.bin", id));
+        let path = wal_file_path(root_dir, id);
         let file = OpenOptions::new()
             .read(true)
             .open(path)?;
@@ -62,4 +62,14 @@ impl WALReader {
 
         Ok(Some(batch))
     }
+}
+
+pub fn remove_wal_file(root_dir: Arc<PathBuf>, id: u64) -> Result<()> {
+    let path = wal_file_path(root_dir, id);
+    remove_file(path)?;
+    Ok(())
+}
+
+fn wal_file_path(root_dir: Arc<PathBuf>, id: u64) -> PathBuf {
+    root_dir.join("wal").join(format!("{}.bin", id))
 }

@@ -5,7 +5,7 @@ use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::server::id::IdGenerator;
 use crate::storage::manifest::{ManifestRecord, ManifestWriter};
 use crate::storage::{MemTable, SSTable, SSTableKey, SSTableWriter, WALWriter};
-use crate::{Result, entry};
+use crate::{Result, entry, storage};
 use anyhow::anyhow;
 use arrow_schema::SchemaRef;
 use bytes::BytesMut;
@@ -13,6 +13,7 @@ use serde_json::Value;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::mem;
+use std::mem::replace;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use crate::storage::stream::Stream;
@@ -202,18 +203,30 @@ impl Server {
             ss_table_keys.clone(),
         ))?;
 
+
+        let mut delete_mem_table_id_list = Vec::new();
+
         //replace memory data
         let mut guard = self.inner.write().unwrap();
-        guard.mem_table_list = guard
-            .mem_table_list
-            .iter()
-            .filter(|m| m.id() > max_mem_table_id)
-            .map(|m| m.clone())
-            .collect();
+        let mem_table_list = mem::replace(&mut guard.mem_table_list, Vec::new());
 
+        for mem_table in mem_table_list {
+            if mem_table.id() <= max_mem_table_id {
+                delete_mem_table_id_list.push(mem_table.id());
+            } else {
+                guard.mem_table_list.push(mem_table);
+            }
+        }
         for ss_table_key in ss_table_keys {
             let stream = guard.streams.get_mut(ss_table_key.stream_name()).unwrap();
             stream.add_ss_table(SSTable::new(ss_table_key));
+        }
+
+        drop(guard);
+
+        //remove wal_file
+        for mem_table_id in delete_mem_table_id_list {
+            storage::remove_wal_file(self.args.root_dir.clone(), mem_table_id)?;
         }
 
         Ok(())
