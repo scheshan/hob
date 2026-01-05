@@ -3,15 +3,17 @@ use crate::arg::Args;
 use crate::schema::{SchemaStore, refresh_schema_job};
 use crate::server::id::IdGenerator;
 use crate::server::server::{Server, ServerRecoveryState};
-use crate::storage::{ManifestReader, ManifestRecord, SSTableKey, ManifestWriter, flush_mem_table_job};
-use std::cmp::max;
-use std::collections::{HashMap};
-use std::time::Duration;
+use crate::storage::{
+    ManifestReader, ManifestRecord, ManifestWriter, SSTableKey, flush_mem_table_job,
+};
 use serde_json::Value;
-use tokio::signal::ctrl_c;
+use std::cmp::max;
+use std::collections::HashMap;
+use std::time::Duration;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use crate::server::http;
 
 pub async fn run() {
     let args = Args::default();
@@ -38,11 +40,22 @@ async fn run_0(main_tracker: &TaskTracker, ct: CancellationToken, args: Args) ->
 
     let server = init_server(id_generator, schema_store, args)?;
 
-    init_flush_mem_table_job(main_tracker, server.clone(), ct.clone());
+    //init flush_mem_table_job
+    main_tracker.spawn({
+        let server = server.clone();
+        let ct = ct.clone();
+        async move { flush_mem_table_job(server, ct).await }
+    });
 
-    add_test_data(main_tracker, server.clone(), ct.clone());
+    //add test data
+    main_tracker.spawn({
+        let server = server.clone();
+        let ct = ct.clone();
+        async move { add_test_data(server, ct).await }
+    });
 
-    ctrl_c().await?;
+    //run http server
+    http::run_http_server(server.clone()).await?;
 
     log::info!("Shutting down server");
 
@@ -102,31 +115,39 @@ fn init_server(id_generator: IdGenerator, schema_store: SchemaStore, args: Args)
 
     let recovery_state =
         ServerRecoveryState::new(mem_table_ids, flush_mem_table_id, stream_ss_table_keys);
-    Server::new(id_generator, schema_store, manifest_writer, args, Some(recovery_state))
+    Server::new(
+        id_generator,
+        schema_store,
+        manifest_writer,
+        args,
+        Some(recovery_state),
+    )
 }
 
-fn init_flush_mem_table_job(tracker: &TaskTracker, server: Server, ct: CancellationToken) {
-    tracker.spawn(async move { flush_mem_table_job(server, ct).await });
-}
+async fn add_test_data(server: Server, ct: CancellationToken) {
+    let mut interval = interval(Duration::from_secs(1));
 
-fn add_test_data(tracker: &TaskTracker, server: Server, ct: CancellationToken) {
-    tracker.spawn(async move {
-        let mut interval = interval(Duration::from_secs(1));
+    let mut x = 0;
 
-        loop {
-            tokio::select! {
-                _ = ct.cancelled() => {
-                    log::info!("Exit add testing data");
+    loop {
+        tokio::select! {
+            _ = ct.cancelled() => {
+                log::info!("Exit add testing data");
+                break;
+            }
+            _ = interval.tick() =>{
+                log::info!("Add testing data");
+                let json = generate_test_data();
+                server.ingest(&"test1".to_string(), json).unwrap();
+
+                x += 1;
+                if x == 20 {
+                    log::info!("Add 20 batches of testing data, now exit");
                     break;
-                }
-                _ = interval.tick() =>{
-                    log::info!("Add testing data");
-                    let json = generate_test_data();
-                    server.ingest(&"test1".to_string(), json).unwrap();
                 }
             }
         }
-    });
+    }
 }
 
 fn generate_test_data() -> Value {
