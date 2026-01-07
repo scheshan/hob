@@ -259,7 +259,7 @@ impl Server {
             batch.add(entry);
         }
 
-        self.populate_id(&mut batch);
+        self.populate_id(&mut batch)?;
 
         Ok(batch)
     }

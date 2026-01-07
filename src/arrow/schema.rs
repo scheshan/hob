@@ -1,7 +1,7 @@
 use arrow_schema::SchemaRef;
 use std::ops::Deref;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ArrowSchema {
     schema: SchemaRef,
     version: u64,

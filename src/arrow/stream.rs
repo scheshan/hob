@@ -54,7 +54,6 @@ impl ArrowRecordBatchStream {
 
             wrapper.next();
             if wrapper.has_next() {
-                wrapper.next();
                 self.heap.push(wrapper);
             }
         }

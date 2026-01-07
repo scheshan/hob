@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::time;
 use std::time::SystemTime;
 
+#[derive(Debug)]
 pub struct Entry {
     pub(crate) time: u64,
     pub(crate) id: u64,
@@ -35,6 +36,7 @@ impl TryFrom<&Value> for Entry {
     }
 }
 
+#[derive(Debug)]
 pub struct EntryBatch {
     pub(crate) stream_name: String,
     pub(crate) schema: ArrowSchema,

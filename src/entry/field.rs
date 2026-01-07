@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum FieldData {
     String(String),
     Bool(bool),
