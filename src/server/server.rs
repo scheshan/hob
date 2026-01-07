@@ -1,9 +1,10 @@
 use crate::arg::Args;
-use crate::arrow::{ArrowRecordBatchStream, ArrowSchema};
+use crate::arrow::{ArrowRecordBatch, ArrowRecordBatchStream, ArrowSchema};
 use crate::entry::{Entry, EntryBatch};
 use crate::schema::{SchemaStore, infer_schema, need_evolve_schema};
 use crate::server::id::IdGenerator;
 use crate::storage::manifest::{ManifestRecord, ManifestWriter};
+use crate::storage::stream::Stream;
 use crate::storage::{MemTable, SSTable, SSTableKey, SSTableWriter, WALWriter};
 use crate::{Result, entry, storage};
 use anyhow::anyhow;
@@ -13,10 +14,9 @@ use serde_json::Value;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::mem;
-use std::mem::replace;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
-use crate::storage::stream::Stream;
+use arrow_array::RecordBatch;
 
 #[derive(Clone)]
 pub struct Server {
@@ -45,7 +45,7 @@ impl Server {
         let mut wal_writer: WALWriter;
 
         match recovery_state {
-            None => {},
+            None => {}
             Some(state) => {
                 //region recover mem_table
 
@@ -203,7 +203,6 @@ impl Server {
             ss_table_keys.clone(),
         ))?;
 
-
         let mut delete_mem_table_id_list = Vec::new();
 
         //replace memory data
@@ -232,11 +231,12 @@ impl Server {
         Ok(())
     }
 
-    fn populate_id(&self, batch: &mut EntryBatch) {
-        let mut id_range = self.id_generator.generate_n(batch.entries.len());
+    fn populate_id(&self, batch: &mut EntryBatch) -> Result<()> {
+        let mut id_range = self.id_generator.generate_n(batch.entries.len())?;
         for entry in &mut batch.entries {
             entry.id = id_range.next().unwrap()
         }
+        Ok(())
     }
 
     fn generate_entry_batch(&self, stream_name: &String, json: Value) -> Result<EntryBatch> {
