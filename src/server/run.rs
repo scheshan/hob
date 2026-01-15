@@ -47,13 +47,6 @@ async fn run_0(main_tracker: &TaskTracker, ct: CancellationToken, args: Args) ->
         async move { flush_mem_table_job(server, ct).await }
     });
 
-    //add test data
-    main_tracker.spawn({
-        let server = server.clone();
-        let ct = ct.clone();
-        async move { add_test_data(server, ct).await }
-    });
-
     //run http server
     http::run_http_server(server.clone()).await?;
 
@@ -122,55 +115,4 @@ fn init_server(id_generator: IdGenerator, schema_store: SchemaStore, args: Args)
         args,
         Some(recovery_state),
     )
-}
-
-async fn add_test_data(server: Server, ct: CancellationToken) {
-    let mut interval = interval(Duration::from_secs(1));
-
-    let mut x = 0;
-
-    loop {
-        tokio::select! {
-            _ = ct.cancelled() => {
-                log::info!("Exit add testing data");
-                break;
-            }
-            _ = interval.tick() =>{
-                log::info!("Add testing data");
-                let json = generate_test_data();
-                server.ingest(&"test1".to_string(), json).unwrap();
-
-                x += 1;
-                if x == 20 {
-                    log::info!("Add 20 batches of testing data, now exit");
-                    break;
-                }
-            }
-        }
-    }
-}
-
-fn generate_test_data() -> Value {
-    use serde_json::Value;
-
-    let json_str = "{\
-  \"string\": \"这是一个字符串\",\
-  \"u64\": 18446744073709551615,\
-  \"i64\": -123,\
-  \"f64\": -1.23,\
-  \"boolean\": true,\
-  \"null\": null,\
-  \"array\": [1, 2, 3],\
-  \"object\": {\
-    \"key1\": \"value1\"\
-  }\
-}";
-    let json = serde_json::from_str::<Value>(json_str).unwrap();
-    let mut v = Vec::new();
-
-    for i in 0..100 {
-        v.push(json.clone());
-    }
-
-    Value::Array(v)
 }
